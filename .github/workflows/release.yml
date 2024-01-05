@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - "release/**"
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    # delete the next line to enable
+    if: false
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v2.4.0
+        with:
+          version: 8.6.12
+
+      - name: Setup Node.js 18.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      - name: Create Release Pull Request or Publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: pnpm release
+          commit: ":bookmark: release package(s)"
+          title: ":bookmark: release package(s)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Check PUSHOVER_APP_TOKEN
+        id: pushover_app_token
+        run: |
+          if [ -n "$PUSHOVER_APP_TOKEN" ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; fi
+        env:
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+
+      - name: Send a notification if a publish happens
+        if: steps.changesets.outputs.published == 'true' && steps.pushover_app_token.outputs.exists == 'true'
+        run: |
+          curl -sSfX POST "https://api.pushover.net/1/messages.json" \
+            -d "user=${PUSHOVER_USER_KEY}" \
+            -d "token=${PUSHOVER_APP_TOKEN}" \
+            -d 'monospace=1' \
+            -d "title=%F0%9F%93%A6%20${GITHUB_REPOSITORY} published packages" \
+            -d 'message=```json
+          ${{ toJSON(fromJSON(steps.changesets.outputs.publishedPackages)) }}
+          ```'
+        env:
+          PUSHOVER_USER_KEY: "${{ secrets.PUSHOVER_USER_KEY }}"
+          PUSHOVER_APP_TOKEN: "${{ secrets.PUSHOVER_APP_TOKEN }}"
+
+      - name: Send a notification if a publish fails
+        if: failure() && steps.changesets.conclusion == 'failure' && steps.pushover_app_token.outputs.exists == 'true'
+        run: |
+          curl -sSfX POST "https://api.pushover.net/1/messages.json" \
+            -d "user=${PUSHOVER_USER_KEY}" \
+            -d "token=${PUSHOVER_APP_TOKEN}" \
+            -d 'html=1' \
+            -d "title=%F0%9F%93%A6%20${GITHUB_REPOSITORY} failed to publish packages" \
+            -d 'message=<p><a href="'"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"'">Run '"$GITHUB_RUN_ID"'</a></p>'
+        env:
+          PUSHOVER_USER_KEY: "${{ secrets.PUSHOVER_USER_KEY }}"
+          PUSHOVER_APP_TOKEN: "${{ secrets.PUSHOVER_APP_TOKEN }}"

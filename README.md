@@ -1,4 +1,4 @@
 # `turborepo-template`
 
-- [CONTRIBUTING](docs/CONTRIBUTING.md)
+- [Contributing Guidelines](docs/CONTRIBUTING.md)
 - [Development](docs/development.md)
